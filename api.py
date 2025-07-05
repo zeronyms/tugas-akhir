@@ -7,22 +7,14 @@ import io
 import base64
 import os
 import requests
+import gdown
+
+file_id = "1zIViB1uWZV4aVxpKWKU4Qk9RhPpc842S"
+gdown.download(f"https://drive.google.com/uc?id={file_id}", "best_model.keras", quiet=False)
 
 app = Flask(__name__)
-
-MODEL_URL = "https://drive.google.com/file/d/1zIViB1uWZV4aVxpKWKU4Qk9RhPpc842S/view?usp=drive_link" # GANTI DENGAN URL PUBLIK ANDA
-MODEL_LOCAL_PATH = "best_model.keras"
-
-
-if not os.path.exists(MODEL_LOCAL_PATH):
-    print(f"Model not found locally. Downloading from {MODEL_URL}...")
-    response = requests.get(MODEL_URL)
-    response.raise_for_status()  
-    with open(MODEL_LOCAL_PATH, "wb") as f:
-        f.write(response.content)
-    print("Model downloaded successfully.")
     
-model = tf.keras.models.load_model(MODEL_LOCAL_PATH)
+model = tf.keras.models.load_model("best_model.keras")
 IMG_SIZE = (224, 224)
 
 mp_face_detection = mp.solutions.face_detection
