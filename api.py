@@ -5,9 +5,24 @@ import numpy as np
 import mediapipe as mp
 import io
 import base64
+import os
+import requests
 
 app = Flask(__name__)
-model = tf.keras.models.load_model("best_model.keras")
+
+MODEL_URL = "https://drive.google.com/file/d/1zIViB1uWZV4aVxpKWKU4Qk9RhPpc842S/view?usp=drive_link" # GANTI DENGAN URL PUBLIK ANDA
+MODEL_LOCAL_PATH = "best_model.keras"
+
+
+if not os.path.exists(MODEL_LOCAL_PATH):
+    print(f"Model not found locally. Downloading from {MODEL_URL}...")
+    response = requests.get(MODEL_URL)
+    response.raise_for_status()  
+    with open(MODEL_LOCAL_PATH, "wb") as f:
+        f.write(response.content)
+    print("Model downloaded successfully.")
+    
+model = tf.keras.models.load_model(MODEL_LOCAL_PATH)
 IMG_SIZE = (224, 224)
 
 mp_face_detection = mp.solutions.face_detection
