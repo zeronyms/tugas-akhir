@@ -1,2 +1,2 @@
 [phases.setup]
-nixPkgs = ["...", "opencv", "libgl"]
+nixPkgs = ["...", "opencv", "libGL", "glib", "xorg.libX11"]
