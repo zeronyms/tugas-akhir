@@ -26,6 +26,7 @@ if "measuring" not in st.session_state:
     st.session_state.measure_values = []
     st.session_state.avg_focus = None
 
+
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
         self.last_sent = time.time() - 4
@@ -83,6 +84,7 @@ with col1:
             "video": {"width": 1280, "height": 720},
             "audio": False,
         },
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
         async_processing=True,
     )
 
@@ -156,14 +158,12 @@ with col2:
         st.write("---")
         st.write("👤 **Wajah Terdeteksi**")
         if st.session_state.latest_face:
-            col_spacer1, col_img, col_spacer2 = st.columns(
-                [1, 3.5, 1]
-            ) 
+            col_spacer1, col_img, col_spacer2 = st.columns([1, 3.5, 1])
             with col_img:
                 st.image(
                     st.session_state.latest_face,
                     caption="Wajah yang dianalisis",
-                    use_container_width=True, 
+                    use_container_width=True,
                 )
         else:
             st.info("Belum ada wajah yang terdeteksi dari server.", icon="🖼️")
