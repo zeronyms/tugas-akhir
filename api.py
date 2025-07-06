@@ -6,12 +6,15 @@ import mediapipe as mp
 import io
 import base64
 import gdown
+import os
 
 
 file_id = "1zIViB1uWZV4aVxpKWKU4Qk9RhPpc842S"
+model_path = "best_model.keras"
 
-if not tf.io.gfile.exists("best_model.keras"):
-    gdown.download(f"https://drive.google.com/uc?id={file_id}", "best_model.keras", quiet=False)
+if not os.path.exists(model_path):
+    file_id = "1zIViB1uWZV4aVxpKWKU4Qk9RhPpc842S"
+    gdown.download(f"https://drive.google.com/uc?id={file_id}", model_path, quiet=False)
 
 app = Flask(__name__)
 model = tf.keras.models.load_model("best_model.keras")
