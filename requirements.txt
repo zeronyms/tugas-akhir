@@ -1,7 +1,8 @@
-Flask
-gunicorn
-tensorflow
-mediapipe
-numpy
+streamlit
+streamlit-webrtc
+opencv-python-headless
+requests
 Pillow
-gdown
+av
+streamlit-autorefresh
+pandas

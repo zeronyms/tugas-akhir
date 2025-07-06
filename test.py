@@ -11,12 +11,10 @@ import queue
 from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 
-# --- KONFIGURASI HALAMAN ---
 st.set_page_config(layout="wide", page_title="Deteksi Fokus Mahasiswa")
-st.title("👁️ Deteksi Tingkat Fokus Mahasiswa secara Real-time")
+st.title("Prototipe Dashboard Deteksi Tingkat Fokus Mahasiswa")
 st_autorefresh(interval=5000, key="data_refresh")
 
-# --- INISIALISASI SESSION STATE ---
 if "latest_label" not in st.session_state:
     st.session_state.latest_label = "Menunggu..."
     st.session_state.latest_conf = 0.0
@@ -28,8 +26,6 @@ if "measuring" not in st.session_state:
     st.session_state.measure_values = []
     st.session_state.avg_focus = None
 
-
-# --- PEMROSES FRAME VIDEO ---
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
         self.last_sent = time.time() - 4
@@ -68,7 +64,7 @@ class VideoProcessor(VideoProcessorBase):
                     )
 
             except requests.exceptions.RequestException as e:
-                print(f"❌ [ERROR] Gagal koneksi ke API: {e}")
+                print(f"[ERROR] Gagal koneksi ke API: {e}")
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
@@ -78,7 +74,7 @@ col1, col2 = st.columns([2, 1.2])
 
 # --- KOLOM KIRI: Kamera, Tombol, Rata-rata Fokus ---
 with col1:
-    st.subheader("📹 Kamera Mahasiswa")
+    st.subheader("🔴 Live Kamera")
     webrtc_ctx = webrtc_streamer(
         key="webcam",
         mode=WebRtcMode.SENDRECV,
@@ -90,24 +86,24 @@ with col1:
         async_processing=True,
     )
 
-    st.markdown("### 🎯 Kontrol Pengukuran Fokus")
+    st.markdown("Kontrol Pengukuran Fokus")
     col_start, col_stop = st.columns([2, 20], gap="small")
 
-    if col_start.button("▶️ Mulai"):
+    if col_start.button("Mulai"):
         st.session_state.measuring = True
         st.session_state.measure_values = []
         st.session_state.avg_focus = None
-        st.success("✅ Pengukuran dimulai...")
+        st.success("Pengukuran dimulai...")
 
-    if col_stop.button("⏹️ Stop"):
+    if col_stop.button("Stop"):
         st.session_state.measuring = False
         if st.session_state.measure_values:
             st.session_state.avg_focus = sum(st.session_state.measure_values) / len(
                 st.session_state.measure_values
             )
-            st.success("🧠 Pengukuran dihentikan.")
+            st.success("Pengukuran dihentikan.")
         else:
-            st.warning("⚠️ Belum ada data yang dikumpulkan.")
+            st.warning("Belum ada data yang dikumpulkan.")
 
     # --- Rata-rata Fokus ---
     with st.container(border=True):
@@ -117,10 +113,10 @@ with col1:
             st.metric(label="Rata-rata", value=f"{st.session_state.avg_focus:.2%}")
         elif st.session_state.measuring:
             st.info(
-                "🔄 Pengukuran sedang berlangsung... Tekan tombol Stop untuk melihat hasil."
+                "Pengukuran sedang berlangsung... Tekan tombol Stop untuk melihat hasil."
             )
         else:
-            st.info("🟢 Tekan 'Mulai' untuk memulai pengukuran.")
+            st.info("Tekan 'Mulai' untuk memulai pengukuran.")
 
 
 # --- KOLOM KANAN: Analisis & Grafik ---
@@ -162,12 +158,12 @@ with col2:
         if st.session_state.latest_face:
             col_spacer1, col_img, col_spacer2 = st.columns(
                 [1, 3.5, 1]
-            )  # lebar kolom tengah lebih besar
+            ) 
             with col_img:
                 st.image(
                     st.session_state.latest_face,
                     caption="Wajah yang dianalisis",
-                    use_container_width=True,  # menyesuaikan otomatis
+                    use_container_width=True, 
                 )
         else:
             st.info("Belum ada wajah yang terdeteksi dari server.", icon="🖼️")
