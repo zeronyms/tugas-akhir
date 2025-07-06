@@ -1,5 +1,6 @@
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
+from twilio.rest import Client
 import av
 import cv2
 import time
@@ -8,13 +9,15 @@ import base64
 from PIL import Image
 from io import BytesIO
 import queue
-from streamlit_autorefresh import st_autorefresh
 import pandas as pd
+from streamlit_autorefresh import st_autorefresh
 
+# === Konfigurasi halaman ===
 st.set_page_config(layout="wide", page_title="Deteksi Fokus Mahasiswa")
-st.title("Prototipe Dashboard Deteksi Tingkat Fokus Mahasiswa")
+st.title("🎓 Prototipe Dashboard Deteksi Tingkat Fokus Mahasiswa")
 st_autorefresh(interval=5000, key="data_refresh")
 
+# === Inisialisasi State ===
 if "latest_label" not in st.session_state:
     st.session_state.latest_label = "Menunggu..."
     st.session_state.latest_conf = 0.0
@@ -26,7 +29,22 @@ if "measuring" not in st.session_state:
     st.session_state.measure_values = []
     st.session_state.avg_focus = None
 
+# === Ambil konfigurasi ICE server dari Twilio ===
+TWILIO_ACCOUNT_SID = st.secrets["TWILIO_ACCOUNT_SID"]
+TWILIO_AUTH_TOKEN = st.secrets["TWILIO_AUTH_TOKEN"]
 
+
+@st.cache_resource
+def get_twilio_ice_servers():
+    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    token = client.tokens.create()
+    return {"iceServers": token.ice_servers}
+
+
+rtc_config = get_twilio_ice_servers()
+
+
+# === Pemrosesan video ===
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
         self.last_sent = time.time() - 4
@@ -49,7 +67,6 @@ class VideoProcessor(VideoProcessorBase):
                     files=files,
                     timeout=10,
                 )
-
                 if res.status_code == 200:
                     data = res.json()
                     label = "Fokus" if data.get("label") == 1 else "Tidak Fokus"
@@ -63,19 +80,19 @@ class VideoProcessor(VideoProcessorBase):
                             "face_image": face_image_b64,
                         }
                     )
-
             except requests.exceptions.RequestException as e:
                 print(f"[ERROR] Gagal koneksi ke API: {e}")
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
 
-# --- TATA LETAK TAMPILAN ---
+# === Layout Utama ===
 col1, col2 = st.columns([2, 1.2])
 
-# --- KOLOM KIRI: Kamera, Tombol, Rata-rata Fokus ---
+# === KOLOM KIRI: Kamera & Kontrol ===
 with col1:
     st.subheader("🔴 Live Kamera")
+
     webrtc_ctx = webrtc_streamer(
         key="webcam",
         mode=WebRtcMode.SENDRECV,
@@ -84,28 +101,28 @@ with col1:
             "video": {"width": 1280, "height": 720},
             "audio": False,
         },
-        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        rtc_configuration=rtc_config,
         async_processing=True,
     )
 
-    st.markdown("Kontrol Pengukuran Fokus")
+    st.markdown("### 🎯 Kontrol Pengukuran Fokus")
     col_start, col_stop = st.columns([2, 20], gap="small")
 
-    if col_start.button("Mulai"):
+    if col_start.button("▶️ Mulai"):
         st.session_state.measuring = True
         st.session_state.measure_values = []
         st.session_state.avg_focus = None
-        st.success("Pengukuran dimulai...")
+        st.success("✅ Pengukuran dimulai...")
 
-    if col_stop.button("Stop"):
+    if col_stop.button("⏹️ Stop"):
         st.session_state.measuring = False
         if st.session_state.measure_values:
             st.session_state.avg_focus = sum(st.session_state.measure_values) / len(
                 st.session_state.measure_values
             )
-            st.success("Pengukuran dihentikan.")
+            st.success("✅ Pengukuran dihentikan.")
         else:
-            st.warning("Belum ada data yang dikumpulkan.")
+            st.warning("⚠️ Belum ada data yang dikumpulkan.")
 
     # --- Rata-rata Fokus ---
     with st.container(border=True):
@@ -115,13 +132,12 @@ with col1:
             st.metric(label="Rata-rata", value=f"{st.session_state.avg_focus:.2%}")
         elif st.session_state.measuring:
             st.info(
-                "Pengukuran sedang berlangsung... Tekan tombol Stop untuk melihat hasil."
+                "⏳ Pengukuran sedang berlangsung... Tekan tombol Stop untuk melihat hasil."
             )
         else:
-            st.info("Tekan 'Mulai' untuk memulai pengukuran.")
+            st.info("🟢 Tekan 'Mulai' untuk memulai pengukuran.")
 
-
-# --- KOLOM KANAN: Analisis & Grafik ---
+# === KOLOM KANAN: Hasil Analisis ===
 with col2:
     st.subheader("📊 Hasil Analisis")
 
@@ -139,7 +155,7 @@ with col2:
                 try:
                     face_bytes = base64.b64decode(result["face_image"])
                     st.session_state.latest_face = Image.open(BytesIO(face_bytes))
-                except Exception as e:
+                except:
                     st.session_state.latest_face = None
             else:
                 st.session_state.latest_face = None
