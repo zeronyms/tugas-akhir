@@ -4,4 +4,4 @@ tensorflow
 mediapipe
 numpy
 Pillow
-gdown
+gdown 
