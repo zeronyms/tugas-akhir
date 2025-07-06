@@ -1,21 +1,24 @@
 FROM python:3.10-slim
 
-# Install system dependencies (including libGL for mediapipe + OpenCV)
+# Install all dependencies required by OpenCV & mediapipe
 RUN apt-get update && apt-get install -y \
   libgl1-mesa-glx \
+  libglib2.0-0 \
+  libsm6 \
+  libxrender1 \
   && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app
 
-# Copy project files
+# Copy all files
 COPY . .
 
-# Install Python dependencies
+# Install Python packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port for Railway
+# Expose port
 EXPOSE 8080
 
-# Start app using gunicorn
+# Run the app
 CMD ["gunicorn", "-b", "0.0.0.0:8080", "api:app"]
