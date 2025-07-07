@@ -14,7 +14,7 @@ from streamlit_autorefresh import st_autorefresh
 
 # === Konfigurasi halaman ===
 st.set_page_config(layout="wide", page_title="Deteksi Fokus Mahasiswa")
-st.title("🎓 Prototipe Dashboard Deteksi Tingkat Fokus Mahasiswa")
+st.title("Prototipe Dashboard Deteksi Tingkat Fokus Mahasiswa")
 st_autorefresh(interval=5000, key="data_refresh")
 
 # === Inisialisasi State ===
@@ -105,41 +105,59 @@ with col1:
         async_processing=True,
     )
 
-    st.markdown("### 🎯 Kontrol Pengukuran Fokus")
-    col_start, col_stop = st.columns([2, 20], gap="small")
-
-    if col_start.button("▶️ Mulai"):
-        st.session_state.measuring = True
-        st.session_state.measure_values = []
-        st.session_state.avg_focus = None
-        st.success("✅ Pengukuran dimulai...")
-
-    if col_stop.button("⏹️ Stop"):
-        st.session_state.measuring = False
-        if st.session_state.measure_values:
-            st.session_state.avg_focus = sum(st.session_state.measure_values) / len(
-                st.session_state.measure_values
-            )
-            st.success("✅ Pengukuran dihentikan.")
-        else:
-            st.warning("⚠️ Belum ada data yang dikumpulkan.")
-
-    # --- Rata-rata Fokus ---
     with st.container(border=True):
-        st.subheader("📉 Rata-rata Fokus")
+        st.subheader("Menghitung Rata-rata Fokus")
+        st.write("**Tekan tombol mulai untuk memulai penghitungan**")
 
+        # Letakkan tombol di dalam kontainer yang sama
+        col_start, col_stop, col_status = st.columns([1, 1, 3])
+
+        with col_start:
+            if st.button("Mulai", use_container_width=True):
+                st.session_state.measuring = True
+                st.session_state.measure_values = []  # Reset data sebelumnya
+                st.session_state.avg_focus = None
+                st.toast("Pengukuran dimulai!")
+
+        with col_stop:
+            if st.button("Stop", use_container_width=True):
+                if st.session_state.measuring:
+                    st.session_state.measuring = False
+                    if st.session_state.measure_values:
+                        # Hitung rata-rata
+                        st.session_state.avg_focus = sum(
+                            st.session_state.measure_values
+                        ) / len(st.session_state.measure_values)
+                        st.toast("Pengukuran selesai!")
+                    else:
+                        st.warning("Tidak ada data fokus yang terkumpul.")
+                else:
+                    st.info("Pengukuran belum dimulai.")
+
+        st.write("---")  # Garis pemisah
+
+        # --- Tampilan Hasil Rata-rata Fokus ---
         if st.session_state.avg_focus is not None:
-            st.metric(label="Rata-rata", value=f"{st.session_state.avg_focus:.2%}")
+            st.metric(
+                label="Hasil Rata-rata Fokus", value=f"{st.session_state.avg_focus:.2%}"
+            )
+            # Tambahkan tombol untuk mereset
+            if st.button("Ulangi Pengukuran", use_container_width=True):
+                st.session_state.measuring = False
+                st.session_state.measure_values = []
+                st.session_state.avg_focus = None
+                st.rerun()  # Refresh halaman untuk memulai dari awal
+
         elif st.session_state.measuring:
             st.info(
-                "⏳ Pengukuran sedang berlangsung... Tekan tombol Stop untuk melihat hasil."
+                "Pengukuran sedang berlangsung... Tekan 'Stop' untuk melihat hasil."
             )
         else:
-            st.info("🟢 Tekan 'Mulai' untuk memulai pengukuran.")
+            st.info("Tekan tombol 'Mulai' untuk memulai pengukuran fokus.")
 
 # === KOLOM KANAN: Hasil Analisis ===
 with col2:
-    st.subheader("📊 Hasil Analisis")
+    st.subheader("Analisis")
 
     if webrtc_ctx and webrtc_ctx.state.playing and webrtc_ctx.video_processor:
         try:
@@ -172,7 +190,7 @@ with col2:
         metric_col2.metric("Tingkat Keyakinan", f"{st.session_state.latest_conf:.2%}")
 
         st.write("---")
-        st.write("👤 **Wajah Terdeteksi**")
+        st.write("**Wajah Terdeteksi**")
         if st.session_state.latest_face:
             col_spacer1, col_img, col_spacer2 = st.columns([1, 3.5, 1])
             with col_img:
@@ -182,12 +200,12 @@ with col2:
                     use_container_width=True,
                 )
         else:
-            st.info("Belum ada wajah yang terdeteksi dari server.", icon="🖼️")
+            st.info("Belum ada wajah yang terdeteksi dari server.")
 
     with st.container(border=True):
-        st.subheader("📈 Grafik Tren Fokus")
+        st.subheader("Fluktuasi Tingkat Fokus")
         if st.session_state.focus_history:
             chart_data = pd.DataFrame({"Tingkat Fokus": st.session_state.focus_history})
             st.area_chart(chart_data, height=200, use_container_width=True)
         else:
-            st.info("Grafik akan muncul setelah data pertama diterima.", icon="📊")
+            st.info("Grafik akan muncul setelah data pertama diterima.")
