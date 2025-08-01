@@ -1,0 +1,7 @@
+source venv/bin/activate
+
+running flask app:
+flask --app api.py run
+
+running streamlit app:
+streamlit run app.py
