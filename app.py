@@ -1,5 +1,6 @@
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
+from twilio.rest import Client
 import av
 import cv2
 import time
@@ -8,32 +9,46 @@ import base64
 from PIL import Image
 from io import BytesIO
 import queue
+import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
-# Auto-refresh setiap 5 detik agar kolom kanan terus cek hasil
+# === Konfigurasi halaman ===
+st.set_page_config(layout="wide", page_title="Deteksi Fokus Mahasiswa")
+st.title("Prototipe Dashboard Deteksi Tingkat Fokus Mahasiswa")
+st_autorefresh(interval=5000, key="data_refresh")
 
-
-st.set_page_config(layout="wide")
-st.title("📷 Deteksi Tingkat Fokus Mahasiswa Realtime")
-
-st_autorefresh(interval=5000, key="refresh")
-
-# Kolom UI
-col1, col2 = st.columns([3, 2])
-
-# State awal
+# === Inisialisasi State ===
 if "latest_label" not in st.session_state:
-    st.session_state.latest_label = "Belum ada prediksi"
-    st.session_state.latest_face = None
-
-if "latest_conf" not in st.session_state:
+    st.session_state.latest_label = "Menunggu..."
     st.session_state.latest_conf = 0.0
+    st.session_state.latest_face = None
+    st.session_state.focus_history = []
 
-# VideoProcessor class
+if "measuring" not in st.session_state:
+    st.session_state.measuring = False
+    st.session_state.measure_values = []
+    st.session_state.avg_focus = None
+
+# === Ambil konfigurasi ICE server dari Twilio ===
+TWILIO_ACCOUNT_SID = st.secrets["TWILIO_ACCOUNT_SID"]
+TWILIO_AUTH_TOKEN = st.secrets["TWILIO_AUTH_TOKEN"]
+
+
+@st.cache_resource
+def get_twilio_ice_servers():
+    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    token = client.tokens.create()
+    return {"iceServers": token.ice_servers}
+
+
+rtc_config = get_twilio_ice_servers()
+
+
+# === Pemrosesan video ===
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
-        self.last_sent = time.time()
-        self._output = queue.Queue()
+        self.last_sent = time.time() - 4
+        self._output_queue = queue.Queue()
 
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
         img = frame.to_ndarray(format="bgr24")
@@ -41,67 +56,157 @@ class VideoProcessor(VideoProcessorBase):
 
         if now - self.last_sent > 5:
             self.last_sent = now
-            print("📤 [INFO] Mengirim frame ke API...")
-
-            # Encode gambar
-            _, img_encoded = cv2.imencode('.jpg', img)
-            files = {'image': ('image.jpg', img_encoded.tobytes(), 'image/jpeg')}
+            _, img_encoded = cv2.imencode(
+                ".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+            )
+            files = {"image": ("image.jpg", img_encoded.tobytes(), "image/jpeg")}
 
             try:
-                res = requests.post("http://localhost:5000/predict", files=files)
-                print("📬 [INFO] Status response:", res.status_code)
-
+                res = requests.post(
+                    # "https://tugas-akhir-production-8f2e.up.railway.app/predict",
+                    "http://127.0.0.1:5000/predict",
+                    files=files,
+                    timeout=10,
+                )
                 if res.status_code == 200:
                     data = res.json()
-                    label = "Fokus" if data["label"] == 1 else "Tidak Fokus"
-                    print(f"✅ [HASIL] Label: {label}, Confidence: {data['prediction']:.2f}")
+                    label = "Fokus" if data.get("label") == 1 else "Tidak Fokus"
+                    confidence = float(data.get("prediction", 0.0))
+                    face_image_b64 = data.get("face_image")
 
-                    self._output.put({
-                        "label": label,
-                        "confidence": float(data["prediction"]),
-                        "face_image": data["face_image"]
-                    })
-                else:
-                    print("⚠️ [WARN] API response:", res.text)
-            except Exception as e:
-                print(f"❌ [ERROR] Gagal koneksi ke API: {e}")
+                    self._output_queue.put(
+                        {
+                            "label": label,
+                            "confidence": confidence,
+                            "face_image": face_image_b64,
+                        }
+                    )
+            except requests.exceptions.RequestException as e:
+                print(f"[ERROR] Gagal koneksi ke API: {e}")
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-# Kamera (kiri)
+
+# === Layout Utama ===
+col1, col2 = st.columns([2, 1.2])
+
+# === KOLOM KIRI: Kamera & Kontrol ===
 with col1:
+    st.subheader("🔴 Live Kamera")
+
     webrtc_ctx = webrtc_streamer(
         key="webcam",
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=VideoProcessor,
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=False
+        media_stream_constraints={
+            "video": {"width": 1280, "height": 720},
+            "audio": False,
+        },
+        rtc_configuration=rtc_config,
+        async_processing=True,
     )
 
-# Hasil prediksi (kanan)
+    with st.container(border=True):
+        st.subheader("Menghitung Rata-rata Fokus")
+        st.write("**Tekan tombol mulai untuk memulai penghitungan**")
+
+        # Letakkan tombol di dalam kontainer yang sama
+        col_start, col_stop, col_status = st.columns([1, 1, 3])
+
+        with col_start:
+            if st.button("Mulai", use_container_width=True):
+                st.session_state.measuring = True
+                st.session_state.measure_values = []  # Reset data sebelumnya
+                st.session_state.avg_focus = None
+                st.toast("Pengukuran dimulai!")
+
+        with col_stop:
+            if st.button("Stop", use_container_width=True):
+                if st.session_state.measuring:
+                    st.session_state.measuring = False
+                    if st.session_state.measure_values:
+                        # Hitung rata-rata
+                        st.session_state.avg_focus = sum(
+                            st.session_state.measure_values
+                        ) / len(st.session_state.measure_values)
+                        st.toast("Pengukuran selesai!")
+                    else:
+                        st.warning("Tidak ada data fokus yang terkumpul.")
+                else:
+                    st.info("Pengukuran belum dimulai.")
+
+        st.write("---")  # Garis pemisah
+
+        # --- Tampilan Hasil Rata-rata Fokus ---
+        if st.session_state.avg_focus is not None:
+            st.metric(
+                label="Hasil Rata-rata Fokus", value=f"{st.session_state.avg_focus:.2%}"
+            )
+            # Tambahkan tombol untuk mereset
+            if st.button("Ulangi Pengukuran", use_container_width=True):
+                st.session_state.measuring = False
+                st.session_state.measure_values = []
+                st.session_state.avg_focus = None
+                st.rerun()  # Refresh halaman untuk memulai dari awal
+
+        elif st.session_state.measuring:
+            st.info(
+                "Pengukuran sedang berlangsung... Tekan 'Stop' untuk melihat hasil."
+            )
+        else:
+            st.info("Tekan tombol 'Mulai' untuk memulai pengukuran fokus.")
+
+# === KOLOM KANAN: Hasil Analisis ===
 with col2:
-    st.header("🔍 Hasil Prediksi")
+    st.subheader("Analisis")
 
-    msg = None
-    if webrtc_ctx and webrtc_ctx.state.playing:
+    if webrtc_ctx and webrtc_ctx.state.playing and webrtc_ctx.video_processor:
         try:
-            msg = webrtc_ctx.video_processor._output.get(timeout=1)
+            result = webrtc_ctx.video_processor._output_queue.get(timeout=1.0)
+            st.session_state.latest_label = result["label"]
+            st.session_state.latest_conf = result["confidence"]
+
+            st.session_state.focus_history.append(st.session_state.latest_conf)
+            if len(st.session_state.focus_history) > 20:
+                st.session_state.focus_history.pop(0)
+
+            if result.get("face_image"):
+                try:
+                    face_bytes = base64.b64decode(result["face_image"])
+                    st.session_state.latest_face = Image.open(BytesIO(face_bytes))
+                except:
+                    st.session_state.latest_face = None
+            else:
+                st.session_state.latest_face = None
+
+            if st.session_state.measuring:
+                st.session_state.measure_values.append(st.session_state.latest_conf)
+
         except queue.Empty:
-            msg = None
+            pass
 
-    if msg:
-        st.session_state.latest_label = msg.get("label", "Tidak diketahui")
-        st.session_state.latest_conf = msg.get("confidence", 0.0)
-        try:
-            face_bytes = base64.b64decode(msg["face_image"])
-            st.session_state.latest_face = Image.open(BytesIO(face_bytes))
-        except Exception as e:
-            print(f"❌ [ERROR] Gagal decode wajah: {e}")
-            st.session_state.latest_face = None
+    with st.container(border=True):
+        metric_col1, metric_col2 = st.columns(2)
+        metric_col1.metric("Status Terakhir", st.session_state.latest_label)
+        metric_col2.metric("Tingkat Keyakinan", f"{st.session_state.latest_conf:.2%}")
 
-    if st.session_state.latest_face:
-        st.image(st.session_state.latest_face, caption="Wajah yang Terdeteksi", use_container_width=True)
+        st.write("---")
+        st.write("**Wajah Terdeteksi**")
+        if st.session_state.latest_face:
+            col_spacer1, col_img, col_spacer2 = st.columns([1, 3.5, 1])
+            with col_img:
+                st.image(
+                    st.session_state.latest_face,
+                    caption="Wajah yang dianalisis",
+                    use_container_width=True,
+                )
+        else:
+            st.info("Belum ada wajah yang terdeteksi dari server.")
 
-    st.markdown(f"### Label: `{st.session_state.latest_label}`")
-    st.markdown(f"**Confidence:** `{st.session_state.latest_conf:.2f}`")
-
+    with st.container(border=True):
+        st.subheader("Fluktuasi Tingkat Fokus")
+        if st.session_state.focus_history:
+            chart_data = pd.DataFrame({"Tingkat Fokus": st.session_state.focus_history})
+            st.area_chart(chart_data, height=200, use_container_width=True)
+        else:
+            st.info("Grafik akan muncul setelah data pertama diterima.")
